@@ -1,7 +1,7 @@
 public class Material {
 
-    private double phong;
-    private double[] Ka, Kd, Ks, Kr;
+    private double phong, spow, eta;
+    private double[] Ka, Kd, Ks, Kr, Ko;
     private String name;
 
     public Material() {
@@ -9,6 +9,7 @@ public class Material {
         Kd = new double[3];
         Ks = new double[3];
         Kr = new double[3];
+        Ko = new double[3];
     }
 
     public Material(String name) {
@@ -17,6 +18,7 @@ public class Material {
         Kd = new double[3];
         Ks = new double[3];
         Kr = new double[3];
+        Ko = new double[3];
     }
 
     public void setPhong(String[] array) {
@@ -26,6 +28,15 @@ public class Material {
     public void setPhong(double val) {
         phong = val;
     }
+
+    public void setSpow(double val) {
+        spow = val;
+    }
+
+    public void setEta(double val) {
+        eta = val;
+    }
+
 
     public void setKa(String[] array) {
         for (int i = 0; i < 3; i++) {
@@ -61,6 +72,10 @@ public class Material {
         Kr[index] = val;
     }
 
+    public void setKo(int index, double val) {
+        Ko[index] = val;
+    }
+
 
     public String getName() {
         return name;
@@ -82,7 +97,20 @@ public class Material {
         return Kr;
     }
 
+    public double[] getKo() {
+        return Ko;
+    }
+
     public double getPhong() {
         return phong;
     }
+
+    public double getSpow() {
+        return spow;
+    }
+
+    public double getEta() {
+        return eta;
+    }
+
 }

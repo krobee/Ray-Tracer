@@ -2,6 +2,8 @@ import Jama.Matrix;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.*;
 
 public class Raytracer {
     Camera cam;
@@ -77,6 +79,8 @@ public class Raytracer {
                     color[i] += mtl.getKd()[i] * light.getB()[i] * NL;
 
                     // specular & phong
+//                    Matrix toC = ray.getPt().minus(ray.getPt());
+//                    toC = toC.times(1 / toC.normF());
                     Matrix toC = ray.getDV().times(-1);
 
                     Matrix spR = N.times(2 * NL).minus(toL);
@@ -84,16 +88,17 @@ public class Raytracer {
 
                     double CdR = toC.times(spR.transpose()).getArray()[0][0];
                     if (CdR > 0) {
-                        color[i] += mtl.getKs()[i] * light.getB()[i] * Math.pow(CdR, mtl.getPhong());
+                        color[i] += mtl.getKs()[i] * light.getB()[i] * Math.pow(CdR, mtl.getSpow());
                     }
                 }
             }
         }
         for (int i = 0; i < accum.length; i++) {
-            accum[i] = accum[i] + (refatt[i] * color[i]);
+            accum[i] += refatt[i] * mtl.getKo()[i] * color[i];
         }
         return accum;
     }
+
 
 
     public double[] ray_trace(Ray ray, double[] accum, double[] refatt, int level) {
@@ -116,6 +121,8 @@ public class Raytracer {
             accum = pt_illum(ray, N, mtl, accum, refatt);
 
             if (level > 0) {
+                double[] flec = new double[3];
+
                 Matrix toC = ray.getDV().times(-1);
                 double NC = N.times(toC.transpose()).getArray()[0][0];
                 Matrix refR = N.times(2 * NC).minus(toC);
@@ -125,8 +132,31 @@ public class Raytracer {
                 for (int i = 0; i < refattTemp.length; i++) {
                     refattTemp[i] = refatt[i] * mtl.getKr()[i];
                 }
-                accum = ray_trace(new Ray(ray.getPt(), refR), accum, refattTemp, (level - 1));
+//                accum = ray_trace(new Ray(ray.getPt(), refR), accum, refattTemp, (level - 1));
+
+                flec = ray_trace(new Ray(ray.getPt(), refR), flec, refattTemp, (level - 1));
+                for(int i = 0; i < 3; i++){
+                    accum[i] += refatt[i] * mtl.getKo()[i] * flec[i];
+                }
             }
+
+            if (level > 0 && DoubleStream.of(mtl.getKo()).sum() < 3){
+                double[] thru = new double[3];
+                Ray fraR = ((Sphere)ray.getSurface()).refract_exit(ray.getDV().times(-1), ray.getPt(), mtl.getEta(), 1);
+                if(fraR != null){
+                    double[] refattTemp = new double[3];
+                    for (int i = 0; i < refattTemp.length; i++) {
+                        refattTemp[i] = refatt[i] * mtl.getKr()[i];
+                    }
+
+                    thru = ray_trace(fraR, thru, refattTemp, (level - 1));
+                    for(int i = 0; i < 3; i++){
+                        accum[i] += refatt[i] * ( 1- mtl.getKo()[i]) * thru[i];
+                    }
+                }
+            }
+
+
         }
 
         return accum;
@@ -139,11 +169,8 @@ public class Raytracer {
             bw.write((int) cam.getWidth() + " " + (int) cam.getHeight() + " " + 255 + "\n");
             for (int i = 0; i < cam.getHeight(); i++) {
                 for (int j = 0; j < cam.getWidth(); j++) {
-                    Ray ray = pixel_ray(j, (int) cam.getWidth() - i - 1);
-                    double[] color = new double[3];
-                    double[] att = {1, 1, 1};
+                    double[] rgb = pixel_ray(j, (int) cam.getWidth() - i - 1, 4);
 
-                    double[] rgb = ray_trace(ray, color, att, recursionLevel);
                     int r = (int) Math.max(0, Math.min(255, Math.round(rgb[0] * 255)));
                     int g = (int) Math.max(0, Math.min(255, Math.round(rgb[1] * 255)));
                     int b = (int) Math.max(0, Math.min(255, Math.round(rgb[2] * 255)));
@@ -157,16 +184,41 @@ public class Raytracer {
         }
     }
 
-    public Ray pixel_ray(int i, int j) {
-        double px = i / (cam.getWidth() - 1) * (cam.getRight() - cam.getLeft()) + cam.getLeft();
-        double py = j / (cam.getHeight() - 1) * (cam.getTop() - cam.getBottom()) + cam.getBottom();
+    public double[] pixel_ray(int i, int j, int num) {
+        double[] rgb = new double[3];
 
-        // get LV and DV for RAY
-        Matrix LV = cam.getEV().plus(cam.getWV().times(cam.getNear()).plus(cam.getUV().times(px)).plus(cam.getVV().times(py)));
-        Matrix DV = LV.minus(cam.getEV());
-        DV = DV.times(1 / DV.normF());
-        Ray ray = new Ray(LV, DV);
-        return ray;
+
+        for(int index = 0; index < num; index++){
+            double[] color = new double[3];
+            double[] att = {1, 1, 1};
+
+            double px = i / (cam.getWidth() - 1) * (cam.getRight() - cam.getLeft()) + cam.getLeft();
+            double py = j / (cam.getHeight() - 1) * (cam.getTop() - cam.getBottom()) + cam.getBottom();
+            px = rand(px);
+            py = rand(py);
+
+            // get LV and DV for RAY
+            Matrix LV = cam.getEV().plus(cam.getWV().times(cam.getNear()).plus(cam.getUV().times(px)).plus(cam.getVV().times(py)));
+            Matrix DV = LV.minus(cam.getEV());
+            DV = DV.times(1 / DV.normF());
+            Ray ray = new Ray(LV, DV);
+
+            double[] rgbTemp = ray_trace(ray, color, att, recursionLevel);
+            for(int k = 0; k < 3; k++){
+                rgb[k] += rgbTemp[k];
+            }
+        }
+
+        for(int index = 0; index < 3; index++){
+            rgb[index] = rgb[index]/num;
+        }
+        return rgb;
+
+    }
+
+    public static double rand(double x){
+        double randomNum = ThreadLocalRandom.current().nextDouble(x-0.0001, x+0.0001);
+        return randomNum;
     }
 
     public void read_driver(String fileName) {
